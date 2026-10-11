@@ -2,7 +2,7 @@
 
 **Lightwave Library** — Koha deployment recipe for Virtualmin with rootless Podman.
 
-> **Private release candidate — not yet verified for a clean installation or approved for public distribution.**
+> **Release candidate — verify on a fresh test server before production use.**
 
 ## Overview
 
@@ -12,7 +12,25 @@ The original working recipe deploys Koha with MariaDB 11.4, Memcached 1.6, Zebra
 
 - An existing deployment was stabilized by allowing the `koha-koha` service user to traverse `/etc/koha/sites` (`chmod 755` on the directory; do not relax permissions on the configuration file).
 - The original recipe generates a browser-accessible installer auto-login page that includes a database password. **Do not publish or deploy that mechanism unchanged.**
-- A community-safe revised recipe still requires verification on a disposable fresh installation before being added here.
+- A revised recipe is available at [`recipes/koha.json`](recipes/koha.json); it still requires fresh-install validation.
+
+## Install the recipe
+
+Download [`recipes/koha.json`](recipes/koha.json) and place it on the Virtualmin Pro host at:
+
+```text
+/etc/webmin/virtualmin-podman/recipes/koha.json
+```
+
+Run as root (or with sudo):
+
+```bash
+sudo mkdir -p /etc/webmin/virtualmin-podman/recipes
+sudo curl -fL https://raw.githubusercontent.com/LightwaveLibrary/virtualmin-koha-podman/main/recipes/koha.json -o /etc/webmin/virtualmin-podman/recipes/koha.json
+python3 -m json.tool /etc/webmin/virtualmin-podman/recipes/koha.json >/dev/null
+```
+
+**Note:** The download command works once the repository is public; for a private repository, download the JSON file while signed in and copy it to that path. See [installation details](docs/installation.md).
 
 ## Video walkthrough
 
