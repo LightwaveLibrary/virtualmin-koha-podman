@@ -1,0 +1,448 @@
+{
+  "id": "koha",
+  "name": "Koha",
+  "version": "stable",
+  "description": "Koha library system (OPAC, staff client, MariaDB, Memcached, Zebra). This domain serves both. The catalog is the site root. The back office is /cgi-bin/koha/mainpage.pl. Upgrade Koha by pulling latest on boot, plack, web, cron, zebra, zebraidx, jobs, and long (image tag stable; that pull is a new Koha release and can migrate the existing database). Do not pull latest, reinstall, or delete db or cache; db holds the catalog.",
+  "categories": [
+    "library"
+  ],
+  "app_port": 8080,
+  "default_variant": "zebra",
+  "required_runtime": "rootless",
+  "restart": "unless-stopped",
+  "required_available_memory_bytes": 2147483648,
+  "required_free_disk_bytes": 8589934592,
+  "required_quota_bytes": 8589934592,
+  "secrets": [
+    "db_password"
+  ],
+  "variants": [
+    {
+      "id": "zebra",
+      "components": [
+        {
+          "role": "database",
+          "suffix": "db",
+          "image": "docker.io/library/mariadb:11.4",
+          "envs": [
+            "MARIADB_ROOT_PASSWORD={{db_password}}"
+          ],
+          "volumes": [
+            [
+              "database",
+              "/var/lib/mysql"
+            ]
+          ],
+          "ready": [
+            "mariadb-admin",
+            "ping",
+            "-h",
+            "127.0.0.1",
+            "-uroot",
+            "-p{{db_password}}",
+            "--protocol=TCP",
+            "--silent"
+          ],
+          "ready_timeout": 180
+        },
+        {
+          "role": "cache",
+          "suffix": "cache",
+          "image": "docker.io/library/memcached:1.6",
+          "ready": [
+            "/bin/bash",
+            "-c",
+            "echo > /dev/tcp/127.0.0.1/11211"
+          ],
+          "ready_timeout": 60
+        },
+        {
+          "role": "service",
+          "suffix": "boot",
+          "image": "docker.io/koha/koha:stable",
+          "entrypoint": "/bin/bash",
+          "command": "-c 'cd /docker && set -euo pipefail; chmod 755 /etc/koha/sites; if [ -f /var/lib/koha/koha-bootstrapped ]; then exec sleep infinity; fi; export KOHA_SERVICE=init; /docker/run.sh; chmod 755 /etc/koha/sites; apache2ctl stop || true; koha-worker --stop --queue default koha || true; koha-worker --stop --queue long_tasks koha || true; exec sleep infinity'",
+          "envs": [
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "apache-available",
+              "/etc/apache2/sites-available"
+            ],
+            [
+              "apache-enabled",
+              "/etc/apache2/sites-enabled"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "service",
+          "suffix": "plack",
+          "image": "docker.io/koha/koha:stable",
+          "entrypoint": "/bin/bash",
+          "command": "-c 'cd /docker && while [ ! -f /var/lib/koha/koha-bootstrapped ]; do sleep 5; done; if ! id koha-koha >/dev/null 2>&1; then adduser --no-create-home --disabled-password --gecos \"Koha instance koha-koha\" --home /var/lib/koha/koha --quiet koha-koha; fi; koha-create-dirs koha || true; export KOHA_HOME=/usr/share/koha KOHA_CONF=/etc/koha/sites/koha/koha-conf.xml PERL5LIB=/usr/share/koha/lib; exec /usr/bin/starman -M FindBin --max-requests 50 --workers 2 -E deployment --listen 0.0.0.0:5000 --access-log /dev/stdout --error-log /dev/stderr /etc/koha/plack.psgi'",
+          "envs": [
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "PLACK_WORKERS=2",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "apache-available",
+              "/etc/apache2/sites-available"
+            ],
+            [
+              "apache-enabled",
+              "/etc/apache2/sites-enabled"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "application",
+          "suffix": "web",
+          "image": "docker.io/koha/koha:stable",
+          "entrypoint": "/bin/bash",
+          "command": "-c 'while [ ! -f /var/lib/koha/koha-bootstrapped ]; do sleep 2; done; if mysql --user=\"$DB_USER\" --password=\"$DB_PASSWORD\" --host=127.0.0.1 --batch --skip-column-names koha_koha -e \"SELECT value FROM systempreferences WHERE variable=\\\"Version\\\"\" 2>/dev/null | grep -q .; then printf \"<!DOCTYPE html><html><head><meta charset=\\\"utf-8\\\"><meta http-equiv=\\\"refresh\\\" content=\\\"0;url=/cgi-bin/koha/mainpage.pl\\\"></head><body></body></html>\\n\" > /usr/share/koha/opac/htdocs/install-login.html; else printf \"<!DOCTYPE html><html><head><meta charset=\\\"utf-8\\\"><title>Koha installer</title></head><body><p><a href=\\\"/cgi-bin/koha/installer/install.pl\\\">Open the Koha installer</a> and sign in using the credentials in your secure deployment configuration.</p></body></html>\\n\" > /usr/share/koha/opac/htdocs/install-login.html; fi; sed -i \"/AssignUserID/d\" /etc/apache2/sites-enabled/*.conf /etc/apache2/sites-available/*.conf; for f in /etc/apache2/sites-enabled/*.conf /etc/apache2/sites-available/*.conf /etc/koha/apache-shared-opac-plack.conf; do [ -f \"$f\" ] || continue; grep -q intranet/installer \"$f\" && continue; grep -q \"5000/opac\" \"$f\" || continue; sed -i \"s#ProxyPass /cgi-bin/koha#ProxyPass /cgi-bin/koha/installer http://127.0.0.1:5000/intranet/installer\\n    ProxyPassReverse /cgi-bin/koha/installer http://127.0.0.1:5000/intranet/installer\\n    ProxyPass /cgi-bin/koha#\" \"$f\"; done; grep -q \"X-Forwarded-Proto\" /etc/koha/apache-shared-opac.conf || printf \"\\nRequestHeader set X-Forwarded-Proto \\\"https\\\"\\n\" >> /etc/koha/apache-shared-opac.conf; for f in /etc/koha/apache-shared-opac-plack.conf /etc/koha/apache-shared-intranet-plack.conf; do [ -f \"$f\" ] || continue; sed -i \"/X-FORWARDED-PROTO/s/ env=HTTPS//; /X-Forwarded-Proto/s/ env=HTTPS//\" \"$f\"; done; if [ -n \"$KOHA_PUBLIC_URL\" ]; then mysql --user=\"$DB_USER\" --password=\"$DB_PASSWORD\" --host=127.0.0.1 koha_koha -e \"UPDATE systempreferences SET value=\\\"$KOHA_PUBLIC_URL\\\" WHERE variable IN (\\\"OPACBaseURL\\\",\\\"staffClientBaseURL\\\");\" || true; fi; perl -MIO::Socket::INET -e \"my \\$s=IO::Socket::INET->new(PeerAddr=>qq{127.0.0.1:11211},Timeout=>2) or exit 0; print \\$s qq{flush_all\\r\\n};\"; grep -q \"Alias /intranet-tmpl\" /etc/koha/apache-shared-opac.conf || printf \"\\nAlias /intranet-tmpl /usr/share/koha/intranet/htdocs/intranet-tmpl\\n<Directory /usr/share/koha/intranet/htdocs/intranet-tmpl>\\n    Require all granted\\n</Directory>\\n\" >> /etc/koha/apache-shared-opac.conf; grep -q \"AliasMatch\" /etc/koha/apache-shared-opac.conf || printf \"AliasMatch ^(/intranet-tmpl/.*)_[0-9]{2}\\\\.[0-9]{7}\\\\.(js|css)\\$ /usr/share/koha/intranet/htdocs\\$1.\\$2\\n\" >> /etc/koha/apache-shared-opac.conf; perl -pi -e \"s/ \\[L\\]/ [PT,L]/ if /js\\\\|css/\" /etc/koha/apache-shared-opac.conf; sed -i -E \"/ProxyPass(Reverse)? \\/cgi-bin\\/koha[[:space:]]/ { /\\/opac/d; }\" /etc/koha/apache-shared-opac-plack.conf; grep -q lightserve-staff-on-opac /etc/koha/apache-shared-opac-plack.conf || printf \"\\n# lightserve-staff-on-opac\\nRewriteEngine On\\nRewriteRule ^/cgi-bin/koha/opac-(.*)\\$ http://127.0.0.1:5000/opac/opac-\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/errors/(.*)\\$ http://127.0.0.1:5000/opac/errors/\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/sco/(.*)\\$ http://127.0.0.1:5000/opac/sco/\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/oai.pl(.*)\\$ http://127.0.0.1:5000/opac/oai.pl\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/ilsdi.pl(.*)\\$ http://127.0.0.1:5000/opac/ilsdi.pl\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/unapi(.*)\\$ http://127.0.0.1:5000/opac/unapi\\$1 [P,L]\\nRewriteCond %%{HTTP_REFERER} /cgi-bin/koha/\\nRewriteCond %%{HTTP_REFERER} !/cgi-bin/koha/opac\\nRewriteCond %%{HTTP_REFERER} !/cgi-bin/koha/errors/\\nRewriteRule ^/cgi-bin/koha/svc/(.*)\\$ http://127.0.0.1:5000/intranet/svc/\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/svc/(.*)\\$ http://127.0.0.1:5000/opac/svc/\\$1 [P,L]\\nRewriteRule ^/cgi-bin/koha/(.*)\\$ http://127.0.0.1:5000/intranet/\\$1 [P,L]\\nProxyPassReverse /cgi-bin/koha/opac- http://127.0.0.1:5000/opac/opac-\\nProxyPassReverse /cgi-bin/koha/errors/ http://127.0.0.1:5000/opac/errors/\\nProxyPassReverse /cgi-bin/koha http://127.0.0.1:5000/intranet\\n\" >> /etc/koha/apache-shared-opac-plack.conf; a2dismod -f mpm_itk; a2enmod mpm_prefork rewrite headers; export KOHA_SERVICE=apache; exec /docker/run.sh'",
+          "envs": [
+            "KOHA_PUBLIC_URL={{url_no_trailing}}",
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "apache-available",
+              "/etc/apache2/sites-available"
+            ],
+            [
+              "apache-enabled",
+              "/etc/apache2/sites-enabled"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ],
+          "ready": [
+            "curl",
+            "-fsS",
+            "http://127.0.0.1:8080/"
+          ],
+          "ready_timeout": 600
+        },
+        {
+          "role": "service",
+          "suffix": "cron",
+          "image": "docker.io/koha/koha:stable",
+          "entrypoint": "/bin/bash",
+          "command": "-c 'while [ ! -f /var/lib/koha/koha-bootstrapped ]; do sleep 5; done; export KOHA_SERVICE=cron; exec /docker/run.sh'",
+          "envs": [
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "service",
+          "suffix": "zebra",
+          "image": "docker.io/koha/koha:stable",
+          "envs": [
+            "KOHA_SERVICE=zebra",
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "service",
+          "suffix": "zebraidx",
+          "image": "docker.io/koha/koha:stable",
+          "envs": [
+            "KOHA_SERVICE=zebra-indexer",
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "worker",
+          "suffix": "jobs",
+          "image": "docker.io/koha/koha:stable",
+          "envs": [
+            "KOHA_SERVICE=worker",
+            "WORKER_QUEUE=default",
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        },
+        {
+          "role": "worker",
+          "suffix": "long",
+          "image": "docker.io/koha/koha:stable",
+          "envs": [
+            "KOHA_SERVICE=worker",
+            "WORKER_QUEUE=long_tasks",
+            "KOHA_INSTANCE=koha",
+            "DB_SERVER=127.0.0.1",
+            "DB_ROOT_USER=root",
+            "DB_ROOT_PASSWORD={{db_password}}",
+            "DB_PASSWORD={{db_password}}",
+            "DB_NAME=koha_koha",
+            "DB_USER=koha_koha",
+            "SEARCH_ENGINE=Zebra",
+            "USE_MEMCACHED=yes",
+            "MEMCACHED_SERVERS=127.0.0.1:11211",
+            "KOHA_MARC_FLAVOUR=marc21",
+            "ZEBRA_MARC_FORMAT=marc21",
+            "KOHA_OPAC_PORT=8080",
+            "KOHA_INTRANET_PORT=8081",
+            "KOHA_INTRANET_SUFFIX=-intra",
+            "WORKER_MAX_PROCESSES=1"
+          ],
+          "volumes": [
+            [
+              "instance",
+              "/var/lib/koha"
+            ],
+            [
+              "etc",
+              "/etc/koha/sites"
+            ],
+            [
+              "logs",
+              "/var/log/koha"
+            ],
+            [
+              "koha-cache",
+              "/var/cache/koha"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "architectures": [
+    "amd64",
+    "arm64"
+  ],
+  "post_install": [
+    "Open {{url_no_trailing}}/install-login.html to reach the Koha installer. Sign in using the instance database credentials from your secure deployment configuration. Automatic browser login is disabled to avoid credential disclosure.",
+    "That staff login is located at {{url_no_trailing}}/cgi-bin/koha/mainpage.pl .",
+    "The catalog is {{url_no_trailing}}/ .",
+    "Before deploying this recipe, run Let's Encrypt on the virtual server that will host Koha, whether that is the main virtual server or a sub server, so the SSL certificate is already in place. Turn on the redirect from HTTP to HTTPS. Koha learns the public HTTPS address from that proxy.",
+    "To upgrade Koha, dump the database first, then Pull latest and reinstall only these containers: boot, plack, web, cron, zebra, zebraidx, jobs, long. They all use koha/koha:stable, so Pull latest downloads the latest Koha release and can run schema updates on the existing catalog.",
+    "Do not Pull latest, reinstall, or delete db or cache. db is the bibliographic and patron data. cache is Memcached and is not part of a Koha upgrade. Deleting the recipe deletes the catalog unless you keep the volumes."
+  ]
+}
