@@ -14,6 +14,10 @@ The original working recipe deploys Koha with MariaDB 11.4, Memcached 1.6, Zebra
 - The original recipe generates a browser-accessible installer auto-login page that includes a database password. **Do not publish or deploy that mechanism unchanged.**
 - A community-safe revised recipe still requires verification on a disposable fresh installation before being added here.
 
+## Video walkthrough
+
+[Watch the deployment walkthrough on YouTube](https://youtu.be/7Y9o2s2cDEM).
+
 ## Documentation
 
 - [Installation](docs/installation.md)
