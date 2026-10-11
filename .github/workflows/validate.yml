@@ -1,0 +1,11 @@
+name: Validate Koha recipe
+on:
+  push:
+  pull_request:
+jobs:
+  json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON
+        run: python3 -m json.tool recipes/koha.json > /dev/null
